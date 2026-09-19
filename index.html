@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoldFlow Studio — твоя личная фабрика контента на своих API</title>
+<meta name="description" content="Веб-студия, которая собирает вертикальные ролики целиком: сценарий, кадры, озвучка, субтитры и экспорт. Работает на твоих API-ключах — OpenAI, OpenRouter, ElevenLabs и любые совместимые.">
+<meta name="theme-color" content="#0A0908">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+
+<!-- ══════════════════ HEADER ══════════════════ -->
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="logo" href="#top">
+      <span class="logo-mark">◆</span> GoldFlow&nbsp;<span class="logo-thin">Studio</span>
+    </a>
+    <nav class="nav">
+      <a href="#studio">Студия</a>
+      <a href="#how">Как работает</a>
+      <a href="#features">Возможности</a>
+      <a href="#pricing">Тарифы</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a href="#studio" class="btn btn-gold btn-sm">Открыть студию</a>
+  </div>
+</header>
+
+<!-- ══════════════════ HERO ══════════════════ -->
+<section class="hero" id="top">
+  <div class="hero-glow"></div>
+  <div class="hero-gridlines"></div>
+  <div class="container hero-inner">
+    <div class="hero-copy">
+      <div class="hero-badge">Работает на твоих API-ключах · без серверов-посредников</div>
+      <h1>Студия, которая создаёт&nbsp;контент за&nbsp;тебя.</h1>
+      <p class="hero-sub">Сценарий, кадры, озвучка, субтитры и монтаж — все нейросети в одном окне.
+      Вставь свои ключи от OpenAI, OpenRouter или ElevenLabs — и ролик собирается за минуты.</p>
+      <div class="hero-cta">
+        <a href="#studio" class="btn btn-gold btn-xl">⚡ Сгенерировать ролик</a>
+        <a href="#how" class="btn btn-ghost btn-xl">Как это работает</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><b>10</b><span>AI-инструментов</span></div>
+        <div class="stat"><b>74</b><span>языка озвучки</span></div>
+        <div class="stat"><b>Минуты</b><span>вместо дней</span></div>
+      </div>
+    </div>
+    <div class="hero-visual" aria-hidden="true">
+      <div class="phone-mock">
+        <div class="phone-screen">
+          <div class="phone-scene s1"></div>
+          <div class="phone-scene s2"></div>
+          <div class="phone-caption">глубоководный мир<br>страшнее кино</div>
+          <div class="phone-progress"><i></i></div>
+        </div>
+        <div class="float-chip c1">✍️ Сценарий ✓</div>
+        <div class="float-chip c2">🎨 Кадры ✓</div>
+        <div class="float-chip c3">🔊 Озвучка ✓</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ STUDIO ══════════════════ -->
+<section class="section" id="studio">
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker mono">Студия · живой инструмент</div>
+      <h2>Один запрос — готовый ролик</h2>
+      <p class="section-sub">Впиши тему, выбери стиль — нейросети сделают остальное. Каждый шаг можно перегенерировать отдельно.</p>
+    </div>
+
+    <div class="studio-topbar">
+      <button class="api-pill" id="apiStatus" title="Открыть настройки API">
+        <span class="dot"></span><span class="api-pill-text">Проверяю ключи…</span>
+      </button>
+      <button class="btn btn-ghost btn-sm" id="openSettings">⚙ Настройки API</button>
+    </div>
+
+    <div class="studio-grid">
+      <!-- ── БРИФ ── -->
+      <form class="card brief" id="brief">
+        <label class="field">
+          <span class="field-label">Тема или идея ролика</span>
+          <textarea id="topic" rows="3" placeholder="Например: 5 фактов о глубоководных существах, которые страшнее любого хоррора. Можно вставить ссылку на ролик-референс"></textarea>
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span class="field-label">Длительность</span>
+            <select id="dur">
+              <option value="15">~15 сек · 3 сцены</option>
+              <option value="30" selected>~30 сек · 5 сцен</option>
+              <option value="60">~60 сек · 9 сцен</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Стиль visuals</span>
+            <select id="style">
+              <option>Кинематографично</option><option>Аниме</option><option>3D-рендер</option>
+              <option>Фотореализм</option><option>Киберпанк</option><option>Акварель</option>
+              <option>Комикс</option><option>Ретро-постер</option><option>Минимализм</option>
+              <option>Фэнтези-арт</option><option>Нуар</option><option>Пиксель-арт</option>
+            </select>
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span class="field-label">Язык озвучки и текста</span>
+            <select id="lang">
+              <option selected>Русский</option><option>English</option><option>Español</option>
+              <option>Deutsch</option><option>Français</option><option>Português</option>
+              <option>中文</option><option>日本語</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Голос диктора</span>
+            <select id="voiceName"></select>
+          </label>
+        </div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="wantVoice" checked><span>Озвучка (TTS)</span></label>
+          <label class="check"><input type="checkbox" id="wantSubs" checked><span>Субтитры</span></label>
+        </div>
+        <button type="submit" class="btn btn-gold btn-xl btn-block" id="generate">⚡ Сгенерировать ролик</button>
+        <p class="hint">Оплата — только твои API-запросы. Ролик на 30 сек ≈ 1 сценарий + 5 картинок + 5 коротких озвучек.</p>
+      </form>
+
+      <!-- ── КОНВЕЙЕР + РЕЗУЛЬТАТ ── -->
+      <div class="card pipeline">
+        <ol class="steps">
+          <li class="step" id="stepScript">
+            <span class="step-ico mono">01</span>
+            <div class="step-body"><b>Сценарий</b><span class="step-info">AI-сценарист: хук, сцены, SEO-название</span></div>
+            <span class="step-state mono"></span>
+          </li>
+          <li class="step" id="stepImages">
+            <span class="step-ico mono">02</span>
+            <div class="step-body"><b>Кадры</b><span class="step-info">Генерация вертикальных картинок под каждую сцену</span></div>
+            <span class="step-state mono"></span>
+          </li>
+          <li class="step" id="stepVoice">
+            <span class="step-ico mono">03</span>
+            <div class="step-body"><b>Озвучка</b><span class="step-info">Реалистичный голос нейросети</span></div>
+            <span class="step-state mono"></span>
+          </li>
+          <li class="step" id="stepBuild">
+            <span class="step-ico mono">04</span>
+            <div class="step-body"><b>Сборка</b><span class="step-info">Таймлайн, субтитры, плеер и экспорт</span></div>
+            <span class="step-state mono"></span>
+          </li>
+        </ol>
+        <div class="scenes" id="scenes" hidden></div>
+
+        <div class="result" id="result" hidden>
+          <div class="stage-wrap">
+            <canvas id="stage" width="720" height="1280"></canvas>
+            <button class="stage-play" id="playBtn" title="Воспроизвести">▶</button>
+          </div>
+          <div class="stage-bar">
+            <span class="mono" id="timeLabel">0:00 / 0:00</span>
+            <div class="stage-actions">
+              <button class="btn btn-ghost btn-sm" id="exportBtn">⬇ Записать видео (WebM)</button>
+              <button class="btn btn-ghost btn-sm" id="coverBtn">🖼 Обложка (PNG)</button>
+            </div>
+          </div>
+          <div class="seo" id="seoBlock"></div>
+          <div class="downloads">
+            <div class="downloads-title">Скачать материалы</div>
+            <div class="downloads-list" id="downloads"></div>
+          </div>
+        </div>
+
+        <div class="empty-state" id="emptyState">
+          <div class="empty-ico">🎬</div>
+          <p>Здесь появится твой ролик.<br>Заполни бриф слева и нажми «Сгенерировать».</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ HOW ══════════════════ -->
+<section class="section" id="how">
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker mono">Как работает</div>
+      <h2>Три шага — и видео готово</h2>
+    </div>
+    <div class="how-grid">
+      <div class="how-card card">
+        <div class="how-num mono">Шаг 1</div>
+        <h3>Тема или ссылка</h3>
+        <p>Впиши идею или вставь ссылку на вирусный ролик — сценарист разберёт структуру и соберёт ролик под твой стиль.</p>
+      </div>
+      <div class="how-card card">
+        <div class="how-num mono">Шаг 2</div>
+        <h3>Студия генерирует</h3>
+        <p>Сценарий, кадры, озвучка и субтитры собираются автоматически. Любой кадр и любую реплику можно перегенерировать до финала.</p>
+      </div>
+      <div class="how-card card">
+        <div class="how-num mono">Шаг 3</div>
+        <h3>Забираешь результат</h3>
+        <p>Готовое видео, обложка, название и описание — заливай на канал и собирай просмотры. Всё скачивается одним списком.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ FEATURES ══════════════════ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker mono">Возможности</div>
+      <h2>Десять инструментов. Одно окно.</h2>
+      <p class="section-sub">Каждый инструмент работает через твои API — без подписок внутри сайта.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat card feat-lg">
+        <div class="feat-ico">🧬</div>
+        <h3>Клон любой идеи</h3>
+        <p>Вставь ссылку на вирусный ролик или опиши формат — сценарист считает структуру «ДНК хита» и пересоберёт её под тебя.</p>
+        <div class="feat-tags"><span>хук</span><span>ритм</span><span>формат</span></div>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">✍️</div>
+        <h3>AI-сценарист</h3>
+        <p>Думает как живой сценарист: хук, сторителлинг, CTA. Пишет под алгоритмы 2026 года.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">🎨</div>
+        <h3>AI-кадры</h3>
+        <p>Вертикальные картинки в любом стиле. Один визуальный язык на весь ролик.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">🔊</div>
+        <h3>Умный звук</h3>
+        <p>Реалистичная озвучка ElevenLabs или OpenAI TTS. Десятки голосов, десятки языков.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">💬</div>
+        <h3>Viral-субтитры</h3>
+        <p>Крупные субтитры в такт озвучке — как у топовых TikTok-каналов.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">🖼</div>
+        <h3>Thumbnail Studio</h3>
+        <p>Обложка с заголовком собирается из первого кадра одним кликом — сразу в PNG 1080×1920.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">📦</div>
+        <h3>Полная упаковка</h3>
+        <p>Название, описание и теги под YouTube/TikTok генерируются вместе со сценарием.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">🌍</div>
+        <h3>74 языка</h3>
+        <p>Озвучка и субтитры на языке твоей аудитории — глобальный охват из одного окна.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">🔁</div>
+        <h3>Перегенерация</h3>
+        <p>Не понравился кадр или реплика? Обнови отдельно сцену — остальное не тронется.</p>
+      </div>
+      <div class="feat card">
+        <div class="feat-ico">🔑</div>
+        <h3>Свои ключи</h3>
+        <p>Ключи хранятся только в твоём браузере. Никаких наценок и лимитов с нашей стороны.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ STYLES WALL ══════════════════ -->
+<section class="section" id="styles">
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker mono">Что ты можешь</div>
+      <h2>Любой стиль — по одному запросу</h2>
+      <p class="section-sub">Нажми на стиль — он подставится в бриф студии.</p>
+    </div>
+    <div class="tiles">
+      <button class="tile g1" data-style="Кинематографично"><b>Кино</b><span>кинематографично</span></button>
+      <button class="tile g2" data-style="Аниме"><b>Аниме</b><span>фэнтези-сцены</span></button>
+      <button class="tile g3" data-style="3D-рендер"><b>3D</b><span>сказочный рендер</span></button>
+      <button class="tile g4" data-style="Фотореализм"><b>Фото</b><span>реализм</span></button>
+      <button class="tile g5" data-style="Киберпанк"><b>Неон</b><span>киберпанк</span></button>
+      <button class="tile g6" data-style="Акварель"><b>Акварель</b><span>мягкие краски</span></button>
+      <button class="tile g2" data-style="Комикс"><b>Комикс</b><span>чернила</span></button>
+      <button class="tile g1" data-style="Ретро-постер"><b>Ретро</b><span>постер</span></button>
+      <button class="tile g3" data-style="Минимализм"><b>Минимал</b><span>чистота</span></button>
+      <button class="tile g4" data-style="Фэнтези-арт"><b>Фэнтези</b><span>эпик</span></button>
+      <button class="tile g5" data-style="Нуар"><b>Нуар</b><span>контраст</span></button>
+      <button class="tile g6" data-style="Пиксель-арт"><b>Пиксель</b><span>8-бит</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ PRICING ══════════════════ -->
+<section class="section" id="pricing">
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker mono">Доступно сейчас</div>
+      <h2>Забери студию по текущей цене</h2>
+      <p class="section-sub">Базовые инструменты сайта бесплатны — тарифы открывают премиум-функции и поддержку.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card card">
+        <div class="price-tier mono">Минимальный старт</div>
+        <h3>Lite</h3>
+        <div class="price"><b>0</b> ₽</div>
+        <div class="price-note">Базовые инструменты</div>
+        <ul>
+          <li>Генерация сценария</li>
+          <li>Кадры и озвучка</li>
+          <li>Субтитры и плеер</li>
+          <li>Свои API-ключи</li>
+        </ul>
+        <a href="#studio" class="btn btn-ghost btn-block">Начать бесплатно</a>
+      </div>
+      <div class="price-card card featured">
+        <div class="price-flag">Популярный выбор</div>
+        <div class="price-tier mono">Полный функционал</div>
+        <h3>Standard</h3>
+        <div class="price"><b>4 990</b> ₽ <s>7 990 ₽</s></div>
+        <div class="price-note">Разовый платёж</div>
+        <ul>
+          <li>Всё из Lite</li>
+          <li>Экспорт видео без водяного знака</li>
+          <li>Thumbnail Studio</li>
+          <li>SEO-упаковка канала</li>
+        </ul>
+        <a href="#" class="btn btn-gold btn-block price-btn" data-tg="standard">Выбрать Standard</a>
+      </div>
+      <div class="price-card card">
+        <div class="price-tier mono">Выбор профи</div>
+        <h3>PRO</h3>
+        <div class="price"><b>14 990</b> ₽ <s>24 990 ₽</s></div>
+        <div class="price-note">Максимум возможностей</div>
+        <ul>
+          <li>Всё из Standard</li>
+          <li>Batch Mode — очередь роликов</li>
+          <li>Приоритетная поддержка</li>
+          <li>Доступ к новым функциям</li>
+        </ul>
+        <a href="#" class="btn btn-ghost btn-block price-btn" data-tg="pro">Купить PRO</a>
+      </div>
+    </div>
+    <p class="pricing-note">Оплата и мгновенная выдача — в Telegram-боте · Лицензия навсегда · Бесплатные обновления</p>
+  </div>
+</section>
+
+<!-- ══════════════════ REVIEWS ══════════════════ -->
+<section class="section" id="reviews">
+  <div class="container">
+    <div class="section-head">
+      <div class="kicker mono">Социальное доказательство</div>
+      <h2>Что говорят клиенты</h2>
+    </div>
+    <div class="reviews-grid">
+      <figure class="review card"><div class="stars">★★★★★</div><blockquote>Собрал первый ролик за вечер — от темы до готового файла ушло минут двадцать. Канал стартовал быстрее, чем я планировал.</blockquote><figcaption><span class="ava">J</span><div><b>Johnny</b><span>Развивает 1-й канал</span></div></figcaption></figure>
+      <figure class="review card"><div class="stars">★★★★★</div><blockquote>Не знала монтаж вообще. Теперь пишу тему — студия делает всё. Вышла из декрета прямо в блог.</blockquote><figcaption><span class="ava">А</span><div><b>Анна П.</b><span>Мотивация для мам</span></div></figcaption></figure>
+      <figure class="review card"><div class="stars">★★★★★</div><blockquote>Один интерфейс вместо пяти вкладок с нейросетями. Плачу только за свои API — выходит заметно дешевле подписок.</blockquote><figcaption><span class="ava">И</span><div><b>Игорь М.</b><span>Исторические факты</span></div></figcaption></figure>
+      <figure class="review card"><div class="stars">★★★★★</div><blockquote>Не понравился кадр — перегенерировал одну сцену, не трогая ролик. Именно этого мне не хватало в больших редакторах.</blockquote><figcaption><span class="ava">Д</span><div><b>Денис К.</b><span>Таинственные истории</span></div></figcaption></figure>
+      <figure class="review card"><div class="stars">★★★★★</div><blockquote>Озвучка на английском для второго канала — просто выбрал язык. Субтитры подъехали сами.</blockquote><figcaption><span class="ava">М</span><div><b>Марат</b><span>Техно-обзоры</span></div></figcaption></figure>
+      <figure class="review card"><div class="stars">★★★★★</div><blockquote>Нажал кнопку — пошёл гулять. Возвращаюсь, а ролик уже готов. Это лучшее описание работы студии.</blockquote><figcaption><span class="ava">А</span><div><b>Артём</b><span>Из голосового отзыва</span></div></figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ FAQ ══════════════════ -->
+<section class="section" id="faq">
+  <div class="container container-narrow">
+    <div class="section-head">
+      <div class="kicker mono">Вопросы</div>
+      <h2>FAQ</h2>
+    </div>
+    <details class="faq-item"><summary>Где взять API-ключи?</summary><div><p>Текст и картинки: <b>OpenAI</b> (platform.openai.com) или агрегатор <b>OpenRouter</b> (openrouter.ai) — там один ключ открывает десятки моделей, включая бесплатные. Озвучка: <b>ElevenLabs</b> (elevenlabs.io) или тот же OpenAI TTS. Купил ключ где угодно — просто вставь его в настройках студии.</p></div></details>
+    <details class="faq-item"><summary>Это безопасно? Куда уходят мои ключи?</summary><div><p>Ключи сохраняются только в localStorage твоего браузера и отправляются напрямую в выбранный API — сайт не имеет своего бэкенда и не передаёт ключи третьим лицам. В любой момент можно удалить их кнопкой в настройках.</p></div></details>
+    <details class="faq-item"><summary>Какие API поддерживаются?</summary><div><p>Любые OpenAI-совместимые: OpenAI, OpenRouter, локальные прокси и другие реселлеры. Для картинок — эндпоинт <code>/images/generations</code> (gpt-image-1, DALL·E 3 и совместимые). Для голоса — OpenAI TTS или ElevenLabs.</p></div></details>
+    <details class="faq-item"><summary>Сколько стоит один ролик?</summary><div><p>Только расход твоих API. Ролик на 30 секунд ≈ 1 текстовый запрос + 5 картинок + 5 коротких озвучек. На gpt-image-1 это порядка $0.2–0.5, на DALL·E 3 дешевле, на бесплатных моделях OpenRouter — почти ноль.</p></div></details>
+    <details class="faq-item"><summary>В каком формате экспорт?</summary><div><p>Плеер записывает видео в <b>WebM</b> (VP9 + звук) прямо в браузере. YouTube и TikTok принимают его как есть; для MP4 прогони файл через любой конвертер. Кадры, обложка, озвучка и сценарий скачиваются по отдельности.</p></div></details>
+    <details class="faq-item"><summary>Можно ли без озвучки?</summary><div><p>Да — сними галочку «Озвучка», и студия соберёт тихий ролик с субтитрами, а длительность рассчитает по тексту. Озвучку можно докрутить позже для отдельных сцен.</p></div></details>
+  </div>
+</section>
+
+<!-- ══════════════════ FOOTER ══════════════════ -->
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <a class="logo" href="#top"><span class="logo-mark">◆</span> GoldFlow&nbsp;<span class="logo-thin">Studio</span></a>
+    <p class="footer-tag">Все нейросети — твои. Контент — тоже.</p>
+    <nav class="footer-nav">
+      <a href="#studio">Студия</a><a href="#features">Возможности</a><a href="#pricing">Тарифы</a><a href="#faq">FAQ</a>
+    </nav>
+    <p class="footer-copy mono">© <span id="year"></span> GoldFlow Studio · работает на API пользователя</p>
+  </div>
+</footer>
+
+<!-- ══════════════════ SETTINGS MODAL ══════════════════ -->
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Настройки API">
+    <div class="modal-head">
+      <h3>⚙ Настройки API</h3>
+      <button class="icon-btn" id="closeSettings" title="Закрыть">✕</button>
+    </div>
+    <p class="modal-note">Ключи хранятся только в твоём браузере и уходят напрямую в выбранные сервисы. Сайт работает без своего сервера.</p>
+
+    <fieldset class="api-group">
+      <legend>✍️ Текст · сценарий и SEO</legend>
+      <div class="field-row">
+        <label class="field"><span class="field-label">Провайдер</span>
+          <select id="textPreset">
+            <option value="openai">OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="custom">Свой (OpenAI-совместимый)</option>
+          </select>
+        </label>
+        <label class="field"><span class="field-label">Модель</span><input id="textModel" placeholder="gpt-4o-mini"></label>
+      </div>
+      <label class="field"><span class="field-label">Base URL</span><input id="textBase" placeholder="https://api.openai.com/v1"></label>
+      <label class="field"><span class="field-label">API-ключ</span>
+        <span class="key-row"><input type="password" id="textKey" placeholder="sk-..." autocomplete="off"><button type="button" class="icon-btn eye" data-eye="textKey">👁</button></span>
+      </label>
+      <div class="api-test"><button type="button" class="btn btn-ghost btn-sm" data-test="text">Проверить ключ</button><span class="test-result" id="textTest"></span></div>
+    </fieldset>
+
+    <fieldset class="api-group">
+      <legend>🎨 Кадры · генерация картинок</legend>
+      <div class="field-row">
+        <label class="field"><span class="field-label">Провайдер</span>
+          <select id="imgPreset">
+            <option value="openai">OpenAI (как текст)</option>
+            <option value="custom">Свой (OpenAI-совместимый)</option>
+          </select>
+        </label>
+        <label class="field"><span class="field-label">Модель</span>
+          <select id="imgModel">
+            <option value="gpt-image-1">gpt-image-1</option>
+            <option value="dall-e-3">dall-e-3</option>
+          </select>
+        </label>
+      </div>
+      <label class="field"><span class="field-label">Base URL</span><input id="imgBase" placeholder="https://api.openai.com/v1"></label>
+      <label class="field"><span class="field-label">API-ключ</span>
+        <span class="key-row"><input type="password" id="imgKey" placeholder="sk-..." autocomplete="off"><button type="button" class="icon-btn eye" data-eye="imgKey">👁</button></span>
+      </label>
+      <div class="api-test"><button type="button" class="btn btn-ghost btn-sm" data-test="img">Проверить ключ</button><span class="test-result" id="imgTest"></span></div>
+    </fieldset>
+
+    <fieldset class="api-group">
+      <legend>🔊 Озвучка · TTS</legend>
+      <div class="field-row">
+        <label class="field"><span class="field-label">Провайдер</span>
+          <select id="voicePreset">
+            <option value="openai">OpenAI TTS</option>
+            <option value="eleven">ElevenLabs</option>
+          </select>
+        </label>
+        <label class="field"><span class="field-label">Модель</span><input id="voiceModel" placeholder="gpt-4o-mini-tts"></label>
+      </div>
+      <label class="field" id="voiceBaseWrap"><span class="field-label">Base URL</span><input id="voiceBase" placeholder="https://api.openai.com/v1"></label>
+      <label class="field"><span class="field-label">API-ключ</span>
+        <span class="key-row"><input type="password" id="voiceKey" placeholder="sk-..." autocomplete="off"><button type="button" class="icon-btn eye" data-eye="voiceKey">👁</button></span>
+      </label>
+      <div class="api-test"><button type="button" class="btn btn-ghost btn-sm" data-test="voice">Проверить ключ</button><span class="test-result" id="voiceTest"></span></div>
+    </fieldset>
+
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="clearSettings">Удалить ключи</button>
+      <button class="btn btn-gold" id="saveSettings">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script src="app.js?v=1"></script>
+</body>
+</html>
