@@ -1,7 +1,7 @@
 /* ════════════════════════════════════════════════════════════
    GoldFlow Studio — логика студии
    Сценарий → Кадры → Озвучка → Сборка → Плеер/Экспорт
-   Ключи хранятся в localStorage и уходят напрямую в API.
+   Один API: Base URL + токен. Всё хранится в localStorage.
    ════════════════════════════════════════════════════════════ */
 'use strict';
 
@@ -20,7 +20,6 @@ function fmtTime(sec) {
   sec = Math.max(0, Math.round(sec));
   return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 }
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function download(href, name) {
   const a = document.createElement('a');
   a.href = href; a.download = name;
@@ -29,8 +28,19 @@ function download(href, name) {
 function saveJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* переполнение — игнорируем */ } }
 function loadJSON(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (e) { return d; } }
 
-/* ────────── константы ────────── */
-const LS_KEY = 'goldflow_settings_v1';
+/* ────────── настройки: ОДИН URL + ОДИН ТОКЕН ────────── */
+const LS_KEY = 'goldflow_api_v2';
+
+const DEFAULTS = {
+  base: 'https://api.openai.com/v1',
+  key: '',
+  textModel: 'gpt-4o-mini',
+  imgModel: 'gpt-image-1',
+  voiceModel: 'gpt-4o-mini-tts',
+  voice: 'alloy'
+};
+
+const OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
 
 const SCENE_COUNT = { 15: 3, 30: 5, 60: 9 };
 
@@ -49,92 +59,97 @@ const STYLE_EN = {
   'Пиксель-арт': 'detailed pixel art, 16-bit palette, crisp pixels'
 };
 
-const OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
-const ELEVEN_VOICES = [
-  ['Rachel', '21m00Tcm4TlvDq8ikWAM'], ['Antoni', 'ErXwobaYiN019PkySvjVt'],
-  ['Bella', 'EXAVITQu4vr4xnSDxMaL'], ['Dom', 'AZnzlk1XvdvUeBnXmlld'],
-  ['Josh', 'TxGEqnHWrfWFTfGW9XjX'], ['Adam', 'pNInz6obpgDQGcFmaJgB']
-];
-
-const DEFAULTS = {
-  text:  { preset: 'openai',     base: 'https://api.openai.com/v1', key: '', model: 'gpt-4o-mini' },
-  img:   { preset: 'openai',     base: 'https://api.openai.com/v1', key: '', model: 'gpt-image-1' },
-  voice: { preset: 'openai',     base: 'https://api.openai.com/v1', key: '', model: 'gpt-4o-mini-tts' }
-};
-
-let settings = loadJSON(LS_KEY, structuredClone(DEFAULTS));
+let settings = Object.assign({}, DEFAULTS, loadJSON(LS_KEY, {}));
 let project = null;   // текущий проект
 let running = false;  // идёт генерация
 
 /* ────────── состояние шагов ────────── */
+const STEP_DEFAULTS = {
+  stepScript: 'AI-сценарист: хук, сцены, SEO-название',
+  stepImages: 'Генерация вертикальных картинок под каждую сцену',
+  stepVoice:  'Реалистичный голос нейросети',
+  stepBuild:  'Таймлайн, субтитры, плеер и экспорт'
+};
 function setStep(id, state, info) {
   const el = $('#' + id);
   el.className = 'step ' + state;
   const label = { idle: '', run: '…', ok: '✓', err: '✗', skip: '—' }[state] || '';
   el.querySelector('.step-state').textContent = label;
-  if (info != null) el.querySelector('.step-info').textContent = info;
+  el.querySelector('.step-info').textContent = info != null ? info : STEP_DEFAULTS[id];
 }
 function resetSteps() {
-  ['stepScript', 'stepImages', 'stepVoice', 'stepBuild'].forEach(id => {
-    const el = $('#' + id); el.className = 'step';
-    el.querySelector('.step-state').textContent = '';
-  });
-  setStep('stepScript', 'idle', 'AI-сценарист: хук, сцены, SEO-название');
-  setStep('stepImages', 'idle', 'Генерация вертикальных картинок под каждую сцену');
-  setStep('stepVoice', 'idle', 'Реалистичный голос нейросети');
-  setStep('stepBuild', 'idle', 'Таймлайн, субтитры, плеер и экспорт');
+  Object.keys(STEP_DEFAULTS).forEach(id => setStep(id, 'idle'));
 }
 
 /* ════════════════════════════════════════════════
-   API-СЛОЙ
+   API-СЛОЙ — всё через один base + один токен
    ════════════════════════════════════════════════ */
 
-function normBase(b) { return (b || '').trim().replace(/\/+$/, ''); }
+function authHeaders() {
+  return { 'Authorization': 'Bearer ' + settings.key, 'Content-Type': 'application/json' };
+}
 
 function apiError(status, body) {
   const msg = (body && body.error && (body.error.message || body.error.code)) ||
               (body && body.detail && (body.detail.message || body.detail)) || '';
-  if (status === 401) return new Error('Ключ не принят (401). Проверь API-ключ. ' + msg);
-  if (status === 403) return new Error('Доступ запрещён (403). Возможно, у ключа нет прав или нужна верификация аккаунта. ' + msg);
-  if (status === 404) return new Error('Не найдено (404). Проверь Base URL и название модели. ' + msg);
+  if (status === 401) return new Error('Токен не принят (401). Проверь API-ключ. ' + msg);
+  if (status === 403) return new Error('Доступ запрещён (403). Возможно, у токена нет прав или нужна верификация аккаунта. ' + msg);
+  if (status === 404) return new Error('Не найдено (404). Проверь Base URL и названия моделей. ' + msg);
   if (status === 429) return new Error('Лимит запросов исчерпан (429). Подожди немного или пополни баланс. ' + msg);
-  if (status === 400 && /image_model|model_not_supported|billing/i.test(msg)) return new Error('Модель недоступна на этом ключе. ' + msg);
   return new Error('Ошибка API ' + status + '. ' + msg);
 }
 function networkError(e) {
-  return new Error('Не удалось связаться с API (' + (e && e.message || 'network') + '). Проверь Base URL, интернет и что сервис разрешает запросы из браузера (CORS). Совет: если открыл файл двойным кликом (file://) — запусти папку через локальный сервер, например: python -m http.server');
+  return new Error('Не удалось связаться с API (' + ((e && e.message) || 'network') + '). Проверь Base URL, интернет и что сервис разрешает запросы из браузера (CORS). Если открыл сайт двойным кликом (file://) и видишь эту ошибку — запусти папку локальным сервером: python -m http.server');
 }
 
-async function apiFetch(url, opts = {}) {
-  let res;
-  try {
-    res = await fetch(url, opts);
-  } catch (e) {
-    throw networkError(e);
-  }
-  if (!res.ok) {
+/* умный запрос: работает с любым провайдером; если адрес дали без /v1 — дописывает сам */
+async function smartFetch(path, opts = {}, baseUrlOverride) {
+  const b = (baseUrlOverride || base()).trim().replace(/\/+$/, '');
+  const candidates = [b + path];
+  if (!/\/v\d+[a-z]*$/.test(b)) candidates.push(b + '/v1' + path);
+  let lastErr = null;
+  for (let i = 0; i < candidates.length; i++) {
+    let res;
+    try {
+      res = await fetch(candidates[i], opts);
+    } catch (e) {
+      lastErr = networkError(e);
+      continue;
+    }
+    if (res.ok) {
+      if (i > 0) {
+        const fixed = candidates[i].slice(0, -path.length);
+        if (baseUrlOverride && $('#apiBase')) $('#apiBase').value = fixed;
+        else { settings.base = fixed; saveJSON(LS_KEY, settings); }
+        toast('Base URL автоматически поправлен: ' + fixed, 'ok', 4000);
+      }
+      return res;
+    }
     let body = null;
     try { body = await res.json(); } catch (e) { /* не json */ }
-    throw apiError(res.status, body);
+    const err = apiError(res.status, body);
+    if (res.status === 404 && i < candidates.length - 1) { lastErr = err; continue; }
+    throw err;
   }
-  return res;
+  throw lastErr || new Error('Не удалось связаться с API.');
 }
+
+function base() { return (settings.base || '').trim().replace(/\/+$/, ''); }
 
 /* JSON из ответа модели — модели любят оборачивать в ```json */
 function extractJSON(text) {
   if (!text) throw new Error('Пустой ответ модели.');
-  let t = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
+  const t = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   try { return JSON.parse(t); } catch (e) { /* дальше */ }
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
   if (a >= 0 && b > a) {
     try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* дальше */ }
   }
-  throw new Error('Модель вернула не-JSON ответ. Попробуй ещё раз или смени модель.');
+  throw new Error('Модель вернула не-JSON. Попробуй ещё раз или смени текстовую модель в настройках.');
 }
 
-/* ── сценарий ── */
+/* ── 1. сценарий: POST /chat/completions ── */
 async function generateScript(brief) {
-  const s = settings.text;
   const sys = 'Ты — сценарист вирусных вертикальных видео (YouTube Shorts, TikTok, Reels). Отвечаешь ТОЛЬКО валидным JSON-объектом без markdown-разметки и пояснений.';
   const user =
     'Сделай сценарий ролика на языке «' + brief.lang + '» длительностью ~' + brief.dur + ' секунд, ровно ' + brief.n + ' сцен.\n' +
@@ -146,79 +161,79 @@ async function generateScript(brief) {
     '"tags":["8 релевантных тегов"],' +
     '"scenes":[' +
     '{"narration":"реплика диктора, 1-2 предложения на ' + brief.lang + ', разговорный темп",' +
-    '"imagePrompt":"детальный промпт картинки ТОЛЬКО НА АНГЛИЙСКОМ, вертикальная композиция, единые персонажи/палитра/стиль на все сцены: ' + (STYLE_EN[brief.style] || 'cinematic') + '",' +
+    '"imagePrompt":"детальный промпт картинки ТОЛЬКО НА АНГЛИЙСКОМ, вертикальная композиция 9:16, единые персонажи/палитра/стиль на все сцены: ' + (STYLE_EN[brief.style] || 'cinematic') + '",' +
     '"onScreen":"короткая фраза 2-5 слов на ' + brief.lang + ' для крупного текста на экране"}]}\n' +
-    'Требования: первая сцена — мощный хук с первых слов; последняя — призыв к действию; narration сцен не должны повторяться.';
+    'Требования: первая сцена — мощный хук с первых слов; последняя — призыв к действию; реплики сцен не должны повторяться.';
 
-  const res = await apiFetch(normBase(s.base) + '/chat/completions', {
+  const res = await smartFetch('/chat/completions', {
     method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + s.key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: s.model, temperature: 0.85, messages: [
-      { role: 'system', content: sys }, { role: 'user', content: user }
-    ]})
+    headers: authHeaders(),
+    body: JSON.stringify({
+      model: settings.textModel,
+      temperature: 0.85,
+      messages: [{ role: 'system', content: sys }, { role: 'user', content: user }]
+    })
   });
   const data = await res.json();
   const content = data && data.choices && data.choices[0] &&
                   (data.choices[0].message && data.choices[0].message.content || data.choices[0].text);
   const j = extractJSON(content);
-  if (!Array.isArray(j.scenes) || !j.scenes.length) throw new Error('В сценарии нет сцен — попробуй перегенерировать.');
+  if (!Array.isArray(j.scenes) || !j.scenes.length) throw new Error('В сценарии нет сцен — попробуй ещё раз.');
   j.scenes = j.scenes.slice(0, brief.n);
   return j;
 }
 
-/* ── кадры ── */
-async function generateImage(prompt, brief) {
-  const s = settings.img;
-  const size = /^dall-e/.test(s.model) ? '1024x1792' : '1024x1536';
-  const body = { model: s.model, prompt, n: 1, size };
-  if (/^dall-e/.test(s.model)) body.response_format = 'b64_json';
-
-  const res = await apiFetch(normBase(s.base) + '/images/generations', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + s.key, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const data = await res.json();
-  const item = data && data.data && data.data[0];
-  if (!item) throw new Error('Пустой ответ генерации картинок.');
-  if (item.b64_json) return { src: 'data:image/png;base64,' + item.b64_json, remote: false };
-  if (item.url) {
+/* ── 2. кадры: POST /images/generations (размер подбирается под провайдера) ── */
+async function generateImage(prompt) {
+  const isDalle = /^dall-e/.test(settings.imgModel);
+  const sizes = isDalle ? ['1024x1792', '1024x1024'] : ['1024x1536', '1024x1024', 'auto'];
+  let lastErr = null;
+  for (const size of sizes) {
+    const body = { model: settings.imgModel, prompt, n: 1, size };
+    if (isDalle) body.response_format = 'b64_json';
+    let res;
     try {
-      const r = await fetch(item.url);
-      const blob = await r.blob();
-      return { src: URL.createObjectURL(blob), remote: false };
+      res = await smartFetch('/images/generations', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body)
+      });
     } catch (e) {
-      return { src: item.url, remote: true }; // canvas будет «tainted» — экспорт может не сработать
+      lastErr = e;
+      if (/API 400\./.test(e.message)) continue; /* размер не подошёл — пробуем следующий */
+      throw e;
     }
+    const data = await res.json();
+    const item = data && data.data && data.data[0];
+    if (!item) throw new Error('Пустой ответ генерации картинок.');
+    if (item.b64_json) return { src: 'data:image/png;base64,' + item.b64_json, remote: false };
+    if (item.url) {
+      try {
+        const r = await fetch(item.url);
+        const blob = await r.blob();
+        return { src: URL.createObjectURL(blob), remote: false };
+      } catch (e) {
+        return { src: item.url, remote: true }; /* canvas будет «tainted» — экспорт может не сработать */
+      }
+    }
+    throw new Error('В ответе нет ни b64_json, ни url.');
   }
-  throw new Error('В ответе нет ни b64_json, ни url.');
+  throw lastErr || new Error('Картинка не сгенерировалась.');
 }
 
-/* ── озвучка ── */
+/* ── 3. озвучка: POST /audio/speech ── */
 async function generateSpeech(text) {
-  const s = settings.voice;
-  let blob;
-  if (s.preset === 'eleven') {
-    const voiceId = ($('#voiceName').value || ELEVEN_VOICES[0][1]);
-    const res = await apiFetch(normBase(s.base) + '/text-to-speech/' + voiceId, {
-      method: 'POST',
-      headers: { 'xi-api-key': s.key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, model_id: s.model || 'eleven_multilingual_v2' })
-    });
-    blob = await res.blob();
-  } else {
-    const res = await apiFetch(normBase(s.base) + '/audio/speech', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + s.key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: s.model || 'gpt-4o-mini-tts',
-        input: text,
-        voice: $('#voiceName').value || 'alloy',
-        response_format: 'mp3'
-      })
-    });
-    blob = await res.blob();
-  }
+  const res = await smartFetch('/audio/speech', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      model: settings.voiceModel,
+      input: text,
+      voice: settings.voice || 'alloy',
+      response_format: 'mp3'
+    })
+  });
+  const blob = await res.blob();
   if (!blob || blob.size < 200) throw new Error('TTS вернул пустой файл.');
   if ((blob.type || '').includes('json')) {
     const txt = await blob.text();
@@ -286,13 +301,13 @@ function updateSceneCard(i) {
   if (!card) return;
   const thumb = card.querySelector('.scene-thumb');
   if (sc.imgSrc) {
-    thumb.querySelectorAll('img').forEach(im => im.remove());
-    if (!thumb.querySelector('img')) {
-      const img = document.createElement('img');
+    let img = thumb.querySelector('img');
+    if (!img) {
+      img = document.createElement('img');
       img.alt = 'кадр ' + (i + 1);
       thumb.prepend(img);
     }
-    thumb.querySelector('img').src = sc.imgSrc;
+    img.src = sc.imgSrc;
     thumb.querySelector('.ph').style.display = 'none';
   } else if (sc.imgError) {
     thumb.querySelector('.ph').textContent = 'ошибка';
@@ -308,8 +323,7 @@ async function sceneImageTask(i) {
   const sc = project.scenes[i];
   sc.imgError = null;
   try {
-    setStep('stepImages', 'run', 'Кадр ' + (i + 1) + ' из ' + project.scenes.length + '…');
-    const r = await generateImage(sc.imagePrompt, project.brief);
+    const r = await generateImage(sc.imagePrompt);
     sc.imgSrc = r.src; sc.imgRemote = r.remote;
     const img = new Image();
     img.decoding = 'async';
@@ -319,17 +333,16 @@ async function sceneImageTask(i) {
     sc.imgError = e.message;
   }
   updateSceneCard(i);
-  const left = project.scenes.filter(s => !s.imgSrc && !s.imgError).length;
   const done = project.scenes.filter(s => s.imgSrc).length;
-  setStep('stepImages', left ? 'run' : 'done-check', 'Готово кадров: ' + done + '/' + project.scenes.length);
-  $('#stepImages').className = 'step ' + (left ? 'run' : (done ? 'ok' : 'err'));
+  const left = project.scenes.filter(s => !s.imgSrc && !s.imgError).length;
+  if (left) setStep('stepImages', 'run', 'Кадр готов: ' + done + '/' + project.scenes.length + '…');
+  else setStep('stepImages', done ? 'ok' : 'err', done + '/' + project.scenes.length + ' кадров' + (done < project.scenes.length ? ' · кнопкой 🎨 можно перегенерировать' : ''));
 }
 
 async function sceneAudioTask(i) {
   const sc = project.scenes[i];
   sc.audioError = null;
   try {
-    setStep('stepVoice', 'run', 'Озвучка сцены ' + (i + 1) + ' из ' + project.scenes.length + '…');
     const blob = await generateSpeech(sc.narration);
     sc.audioBlob = blob;
     const ab = await blob.arrayBuffer();
@@ -340,34 +353,28 @@ async function sceneAudioTask(i) {
   updateSceneCard(i);
   const have = project.scenes.filter(s => s.audioBlob).length;
   const left = project.scenes.filter(s => !s.audioBlob && !s.audioError).length;
-  setStep('stepVoice', 'run', 'Готово озвучек: ' + have + '/' + project.scenes.length);
-  if (!left) {
-    $('#stepVoice').className = 'step ' + (have ? 'ok' : (project.wantVoice ? 'err' : 'skip'));
-    if (!have && project.wantVoice) setStep('stepVoice', 'err', 'Озвучка не удалась: ' + (project.scenes[0].audioError || ''));
-  }
+  if (left) setStep('stepVoice', 'run', 'Озвучка готова: ' + have + '/' + project.scenes.length + '…');
+  else setStep('stepVoice', have ? 'ok' : (project.wantVoice ? 'err' : 'skip'), have + '/' + project.scenes.length + ' озвучек' + (have < project.scenes.length ? ' · кнопкой 🔊 можно повторить' : ''));
 }
 
 async function retrySceneImage(i) {
   if (running) return toast('Дождись окончания текущей генерации.', 'err');
-  if (!settings.img.key) return openSettings('img');
+  if (!settings.key) return openSettings();
   const card = $('#scene' + i);
   card.classList.remove('error');
   const ph = card.querySelector('.ph'); ph.style.display = ''; ph.textContent = 'кадр ' + (i + 1) + '…';
   await sceneImageTask(i);
   rebuildAfterRetry();
-  toast(scenes_imgMsg(i), 'ok', 2500);
-}
-function scenes_imgMsg(i) {
   const sc = project.scenes[i];
-  return sc.imgSrc ? 'Кадр ' + (i + 1) + ' обновлён.' : 'Не вышло: ' + (sc.imgError || 'ошибка');
+  toast(sc.imgSrc ? 'Кадр ' + (i + 1) + ' обновлён.' : 'Не вышло: ' + (sc.imgError || 'ошибка'), sc.imgSrc ? 'ok' : 'err', 3000);
 }
 async function retrySceneAudio(i) {
   if (running) return toast('Дождись окончания текущей генерации.', 'err');
-  if (!settings.voice.key) return openSettings('voice');
+  if (!settings.key) return openSettings();
   await sceneAudioTask(i);
   rebuildAfterRetry();
   const sc = project.scenes[i];
-  toast(sc.audioBlob ? 'Озвучка сцены ' + (i + 1) + ' обновлена.' : 'Не вышло: ' + (sc.audioError || 'ошибка'), sc.audioBlob ? 'ok' : 'err');
+  toast(sc.audioBlob ? 'Озвучка сцены ' + (i + 1) + ' обновлена.' : 'Не вышло: ' + (sc.audioError || 'ошибка'), sc.audioBlob ? 'ok' : 'err', 3000);
 }
 
 function rebuildAfterRetry() {
@@ -382,10 +389,11 @@ async function onGenerate(e) {
   if (running) return;
   const topic = $('#topic').value.trim();
   if (topic.length < 3) { toast('Сначала впиши тему ролика.', 'err'); $('#topic').focus(); return; }
-  if (!settings.text.key) { openSettings('text'); toast('Добавь API-ключ для текста — он пишет сценарий.', 'err'); return; }
-  if (!settings.img.key) { openSettings('img'); toast('Добавь API-ключ для картинок.', 'err'); return; }
-  const wantVoice = $('#wantVoice').checked;
-  if (wantVoice && !settings.voice.key) { openSettings('voice'); toast('Добавь API-ключ озвучки или отключи её галочкой.', 'err'); return; }
+  if (!settings.key || !base()) {
+    openSettings();
+    toast('Сначала вставь Base URL и токен своего API в настройках.', 'err');
+    return;
+  }
 
   stopPlayback();
   running = true;
@@ -402,7 +410,7 @@ async function onGenerate(e) {
     n: SCENE_COUNT[+$('#dur').value] || 5
   };
   project = {
-    brief, wantVoice,
+    brief, wantVoice: $('#wantVoice').checked,
     wantSubs: $('#wantSubs').checked,
     title: '', description: '', tags: [],
     scenes: []
@@ -410,7 +418,7 @@ async function onGenerate(e) {
 
   try {
     /* 1. сценарий */
-    setStep('stepScript', 'run', 'Пишу сценарий: ' + brief.topic.slice(0, 60) + '…');
+    setStep('stepScript', 'run', 'Пишу сценарий…');
     const j = await generateScript(brief);
     project.title = j.title || 'Без названия';
     project.description = j.description || '';
@@ -420,30 +428,24 @@ async function onGenerate(e) {
       onScreen: s.onScreen || '', imgSrc: null, imgEl: null, imgRemote: false, imgError: null,
       audioBlob: null, audioBuffer: null, audioError: null, duration: 0, start: 0, subs: []
     }));
-    setStep('stepScript', 'ok', 'Сценариев сцен: ' + project.scenes.length + ' · «' + project.title.slice(0, 40) + '»');
+    setStep('stepScript', 'ok', 'Сцен: ' + project.scenes.length + ' · «' + project.title.slice(0, 40) + '»');
     renderSceneCards();
 
     /* 2. кадры */
-    $('#stepImages').className = 'step run';
+    setStep('stepImages', 'run', 'Кадр 0/' + project.scenes.length + '…');
     await pool(project.scenes, 2, (_, i) => sceneImageTask(i));
     const okImg = project.scenes.filter(s => s.imgSrc).length;
     if (!okImg) {
       setStep('stepImages', 'err', 'Все кадры упали: ' + (project.scenes[0].imgError || ''));
-      throw new Error('Кадры не сгенерировались: ' + (project.scenes[0].imgError || 'проверь ключ и модель картинок'));
+      throw new Error('Кадры не сгенерировались: ' + (project.scenes[0].imgError || 'проверь токен и модель картинок в настройках'));
     }
-    setStep('stepImages', okImg === project.scenes.length ? 'ok' : 'err',
-      okImg + '/' + project.scenes.length + ' кадров · кнопкой 🎨 можно перегенерировать');
 
     /* 3. озвучка */
-    if (wantVoice) {
-      $('#stepVoice').className = 'step run';
+    if (project.wantVoice) {
+      setStep('stepVoice', 'run', 'Озвучка 0/' + project.scenes.length + '…');
       await pool(project.scenes, 2, (_, i) => sceneAudioTask(i));
-      const okAu = project.scenes.filter(s => s.audioBlob).length;
-      setStep('stepVoice', okAu === project.scenes.length ? 'ok' : 'err',
-        okAu + '/' + project.scenes.length + ' озвучек' + (okAu < project.scenes.length ? ' · кнопкой 🔊 можно повторить' : ''));
     } else {
       setStep('stepVoice', 'skip', 'Озвучка отключена — ролик будет тихим с субтитрами');
-      $('#stepVoice').className = 'step';
     }
 
     /* 4. сборка */
@@ -484,7 +486,7 @@ function splitSubs(text) {
 function buildTimeline() {
   if (!project) return;
   let t = 0;
-  project.scenes.forEach((sc, i) => {
+  project.scenes.forEach(sc => {
     if (sc.audioBuffer) sc.duration = sc.audioBuffer.duration + 0.45;
     else {
       const words = (sc.narration || '').split(/\s+/).filter(Boolean).length;
@@ -509,15 +511,15 @@ const g = canvas.getContext('2d');
 let sources = [], rafId = 0, playing = false, playT0 = 0, pausedAt = 0, recording = false, recorder = null, recChunks = [];
 
 function playerT() {
-  if (!playing && pausedAt) return pausedAt;
-  if (!playing || !actx) return pausedAt;
-  return Math.min(project ? project.total : 0, actx.currentTime - playT0);
+  if (!project) return 0;
+  if (playing && actx) return Math.min(project.total, actx.currentTime - playT0);
+  return pausedAt;
 }
 
 function drawCoverImg(img, scale, dx, dy) {
   const W = canvas.width, H = canvas.height;
-  const base = Math.max(W / img.width, H / img.height) * scale;
-  const w = img.width * base, h = img.height * base;
+  const k = Math.max(W / img.width, H / img.height) * scale;
+  const w = img.width * k, h = img.height * k;
   g.drawImage(img, (W - w) / 2 + dx, (H - h) / 2 + dy, w, h);
 }
 
@@ -630,7 +632,7 @@ function scheduleAudio(fromT) {
   project.scenes.forEach(sc => {
     if (!sc.audioBuffer) return;
     const when = now + (sc.start - fromT);
-    if (when < now - 0.02) return; // сцена уже прошла
+    if (when < now - 0.02) return; /* сцена уже прошла */
     const src = actx.createBufferSource();
     src.buffer = sc.audioBuffer;
     src.connect(master);
@@ -781,8 +783,8 @@ function downloadCover() {
   cg.fillStyle = '#000'; cg.fillRect(0, 0, 1080, 1920);
   if (sc0 && sc0.imgEl) {
     const img = sc0.imgEl;
-    const base = Math.max(1080 / img.width, 1920 / img.height);
-    const w = img.width * base, h = img.height * base;
+    const k = Math.max(1080 / img.width, 1920 / img.height);
+    const w = img.width * k, h = img.height * k;
     cg.drawImage(img, (1080 - w) / 2, (1920 - h) / 2, w, h);
   } else {
     const grad = cg.createLinearGradient(0, 0, 1080, 1920);
@@ -807,7 +809,10 @@ function downloadCover() {
   cg.font = '700 34px "Geist Mono", monospace';
   const bw = cg.measureText(badge).width + 64;
   cg.fillStyle = '#D4AF37';
-  cg.beginPath(); cg.roundRect((1080 - bw) / 2, 1180, bw, 64, 32); cg.fill();
+  cg.beginPath();
+  if (cg.roundRect) cg.roundRect((1080 - bw) / 2, 1180, bw, 64, 32);
+  else cg.rect((1080 - bw) / 2, 1180, bw, 64);
+  cg.fill();
   cg.fillStyle = '#221803'; cg.textAlign = 'center'; cg.textBaseline = 'middle';
   cg.fillText(badge, 540, 1213);
 
@@ -876,9 +881,9 @@ function renderDownloads() {
 
   project.scenes.forEach((s, i) => {
     if (s.imgSrc) row('🎨 Кадр ' + (i + 1) + ' — вертикальная картинка', 'Скачать', () => {
-      const a = document.createElement('a');
-      fetch(s.imgSrc).then(r => r.blob()).then(b =>
-        download(URL.createObjectURL(b), slug(project.title) + '-frame-' + (i + 1) + '.png'))
+      fetch(s.imgSrc)
+        .then(r => r.blob())
+        .then(b => download(URL.createObjectURL(b), slug(project.title) + '-frame-' + (i + 1) + '.png'))
         .catch(() => window.open(s.imgSrc, '_blank'));
     });
   });
@@ -905,7 +910,7 @@ function showResult() {
   seo.innerHTML =
     '<div class="seo-title"></div>' +
     '<div class="seo-desc"></div>' +
-    '<div class="seo-tags">' + project.tags.map(t => '<span></span>').join('') + '</div>';
+    '<div class="seo-tags">' + project.tags.map(() => '<span></span>').join('') + '</div>';
   seo.querySelector('.seo-title').textContent = project.title;
   seo.querySelector('.seo-desc').textContent = project.description;
   seo.querySelectorAll('.seo-tags span').forEach((el, i) => el.textContent = project.tags[i]);
@@ -914,155 +919,130 @@ function showResult() {
 }
 
 /* ════════════════════════════════════════════════
-   НАСТРОЙКИ API
+   НАСТРОЙКИ: один URL + один токен
    ════════════════════════════════════════════════ */
 
-function openSettings(focus) {
+function openSettings() {
   fillSettingsForm();
   $('#settingsModal').hidden = false;
-  if (focus === 'text') setTimeout(() => $('#textKey').focus(), 60);
-  if (focus === 'img') setTimeout(() => $('#imgKey').focus(), 60);
-  if (focus === 'voice') setTimeout(() => $('#voiceKey').focus(), 60);
+  setTimeout(() => $('#apiKey').focus(), 60);
 }
 function closeSettings() { $('#settingsModal').hidden = true; }
 
 function fillSettingsForm() {
-  $('#textPreset').value = settings.text.preset;
-  $('#textBase').value = settings.text.base;
-  $('#textKey').value = settings.text.key;
-  $('#textModel').value = settings.text.model;
-  $('#imgPreset').value = settings.img.preset;
-  $('#imgBase').value = settings.img.base;
-  $('#imgKey').value = settings.img.key;
-  $('#imgModel').value = settings.img.model;
-  $('#voicePreset').value = settings.voice.preset;
-  $('#voiceBase').value = settings.voice.base;
-  $('#voiceKey').value = settings.voice.key;
-  $('#voiceModel').value = settings.voice.model;
-  syncVoiceBaseVis();
-}
-
-function readSettingsForm() {
-  settings.text  = { preset: $('#textPreset').value, base: normBase($('#textBase').value) || DEFAULTS.text.base, key: $('#textKey').value.trim(), model: $('#textModel').value.trim() || DEFAULTS.text.model };
-  settings.img   = { preset: $('#imgPreset').value, base: normBase($('#imgBase').value) || DEFAULTS.img.base, key: $('#imgKey').value.trim(), model: $('#imgModel').value || 'gpt-image-1' };
-  settings.voice = { preset: $('#voicePreset').value, base: normBase($('#voiceBase').value) || (settings.voice.preset === 'eleven' ? 'https://api.elevenlabs.io' : DEFAULTS.voice.base), key: $('#voiceKey').value.trim(), model: $('#voiceModel').value.trim() || (settings.voice.preset === 'eleven' ? 'eleven_multilingual_v2' : 'gpt-4o-mini-tts') };
+  $('#apiBase').value = settings.base;
+  $('#apiKey').value = settings.key;
+  $('#textModel').value = settings.textModel;
+  $('#imgModel').value = settings.imgModel;
+  $('#voiceModel').value = settings.voiceModel;
+  syncBaseChips();
 }
 
 function updateApiStatus() {
   const pill = $('#apiStatus');
-  const hasT = !!settings.text.key, hasI = !!settings.img.key, hasV = !!settings.voice.key;
   pill.classList.remove('ok', 'warn');
-  if (hasT && hasI && (hasV || !$('#wantVoice').checked)) {
+  if (settings.key && base()) {
     pill.classList.add('ok');
-    pill.querySelector('.api-pill-text').textContent = 'API подключены — можно генерировать';
-  } else if (hasT || hasI || hasV) {
-    pill.classList.add('warn');
-    pill.querySelector('.api-pill-text').textContent = 'Ключи добавлены не полностью';
+    pill.querySelector('.api-pill-text').textContent = 'API подключён — можно генерировать';
   } else {
     pill.classList.add('warn');
-    pill.querySelector('.api-pill-text').textContent = 'Добавь API-ключи в настройках';
+    pill.querySelector('.api-pill-text').textContent = 'Вставь URL и токен API в настройках';
   }
 }
 
 function populateVoiceSelect() {
   const sel = $('#voiceName');
-  const prev = settings.voice.voice || '';
   sel.innerHTML = '';
-  if (settings.voice.preset === 'eleven') {
-    ELEVEN_VOICES.forEach(([name, id]) => {
-      const o = document.createElement('option'); o.value = id; o.textContent = name;
-      sel.appendChild(o);
-    });
-  } else {
-    OPENAI_VOICES.forEach(v => {
-      const o = document.createElement('option'); o.value = v; o.textContent = v;
-      sel.appendChild(o);
-    });
-  }
-  const vals = [...sel.options].map(o => o.value);
-  sel.value = vals.includes(prev) ? prev : vals[0];
-  settings.voice.voice = sel.value;
+  OPENAI_VOICES.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    sel.appendChild(o);
+  });
+  sel.value = OPENAI_VOICES.includes(settings.voice) ? settings.voice : OPENAI_VOICES[0];
+  settings.voice = sel.value;
 }
 
-/* пресеты провайдеров */
-function applyTextPreset() {
-  const p = $('#textPreset').value;
-  if (p === 'openai') { $('#textBase').value = 'https://api.openai.com/v1'; if (!$('#textModel').value) $('#textModel').value = 'gpt-4o-mini'; }
-  if (p === 'openrouter') { $('#textBase').value = 'https://openrouter.ai/api/v1'; $('#textModel').value = 'openai/gpt-4o-mini'; }
-}
-function applyImgPreset() {
-  const p = $('#imgPreset').value;
-  if (p === 'openai') $('#imgBase').value = 'https://api.openai.com/v1';
-}
-function syncVoiceBaseVis() {
-  $('#voiceBaseWrap').style.display = $('#voicePreset').value === 'eleven' ? 'none' : '';
-}
-function applyVoicePreset() {
-  const p = $('#voicePreset').value;
-  if (p === 'openai') { $('#voiceBase').value = 'https://api.openai.com/v1'; $('#voiceModel').value = 'gpt-4o-mini-tts'; }
-  if (p === 'eleven') { $('#voiceBase').value = 'https://api.elevenlabs.io'; $('#voiceModel').value = 'eleven_multilingual_v2'; }
-  syncVoiceBaseVis();
-}
-
-/* проверка ключей */
-async function testKey(kind) {
-  const out = $('#' + kind + 'Test');
+async function testKey() {
+  const out = $('#keyTest');
   out.className = 'test-result'; out.textContent = 'проверяю…';
-  const base = normBase(kind === 'voice' && $('#voicePreset').value === 'eleven'
-    ? 'https://api.elevenlabs.io' : $('#' + kind + 'Base').value);
-  const key = $('#' + kind + 'Key').value.trim();
-  if (!key) { out.className = 'test-result err'; out.textContent = 'вставь ключ'; return; }
+  const url = $('#apiBase').value.trim();
+  const key = $('#apiKey').value.trim();
+  if (!url || !key) { out.className = 'test-result err'; out.textContent = 'заполни оба поля'; return; }
   try {
-    let url, headers;
-    if (kind === 'voice' && $('#voicePreset').value === 'eleven') {
-      url = base + '/v1/user'; headers = { 'xi-api-key': key };
-    } else {
-      url = base + '/models'; headers = { 'Authorization': 'Bearer ' + key };
-    }
-    const res = await apiFetch(url, { headers });
-    const data = await res.json();
-    const n = Array.isArray(data && data.data) ? data.data.length : null;
+    /* проверяем коротким запросом к текстовой модели — это работает у всех провайдеров */
+    const res = await smartFetch('/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: $('#textModel').value.trim() || DEFAULTS.textModel,
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'ping' }]
+      })
+    }, url);
+    await res.json();
     out.className = 'test-result ok';
-    out.textContent = '✓ Ключ принят' + (n != null ? ' (моделей: ' + n + ')' : '');
+    out.textContent = '✓ Подключение работает — модель отвечает';
   } catch (e) {
     out.className = 'test-result err';
-    out.textContent = '✗ ' + e.message.slice(0, 140);
+    out.textContent = '✗ ' + e.message.slice(0, 160);
   }
 }
 
-/* ── события настроек ── */
-$('#openSettings').addEventListener('click', () => openSettings());
-$('#apiStatus').addEventListener('click', () => openSettings());
+/* быстрые кнопки популярных провайдеров + подсказка моделей под каждого */
+const PRESET_MODELS = {
+  'https://api.openai.com/v1': ['gpt-4o-mini', 'gpt-image-1', 'gpt-4o-mini-tts'],
+  'https://api.z.ai/api/paas/v4': ['glm-5.3', 'cogview-4', 'cogtts'],
+  'https://open.bigmodel.cn/api/paas/v4': ['glm-5.3', 'cogview-4', 'cogtts'],
+  'https://openrouter.ai/api/v1': ['openai/gpt-4o-mini', 'google/gemini-2.5-flash-image', 'openai/gpt-4o-mini-tts'],
+  'https://api.proxyapi.ru/v1': ['gpt-4o-mini', 'dall-e-3', 'tts-1']
+};
+function syncBaseChips() {
+  const cur = ($('#apiBase').value || '').trim().replace(/\/+$/, '');
+  $$('#baseChips [data-base]').forEach(c => c.classList.toggle('active', c.dataset.base === cur));
+}
+$$('#baseChips [data-base]').forEach(ch => ch.addEventListener('click', () => {
+  $('#apiBase').value = ch.dataset.base;
+  const m = PRESET_MODELS[ch.dataset.base];
+  if (m) {
+    $('#textModel').value = m[0];
+    $('#imgModel').value = m[1];
+    $('#voiceModel').value = m[2];
+  }
+  syncBaseChips();
+}));
+$('#apiBase').addEventListener('input', syncBaseChips);
+
+$('#openSettings').addEventListener('click', openSettings);
+$('#apiStatus').addEventListener('click', openSettings);
 $('#closeSettings').addEventListener('click', closeSettings);
 $('#settingsModal').addEventListener('click', e => { if (e.target === $('#settingsModal')) closeSettings(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#settingsModal').hidden) closeSettings(); });
 
-$('#textPreset').addEventListener('change', applyTextPreset);
-$('#imgPreset').addEventListener('change', applyImgPreset);
-$('#voicePreset').addEventListener('change', applyVoicePreset);
+$('#testKeyBtn').addEventListener('click', testKey);
 
 $$('.eye').forEach(b => b.addEventListener('click', () => {
   const inp = $('#' + b.dataset.eye);
   inp.type = inp.type === 'password' ? 'text' : 'password';
 }));
-$$('[data-test]').forEach(b => b.addEventListener('click', () => testKey(b.dataset.test)));
 
 $('#saveSettings').addEventListener('click', () => {
-  readSettingsForm();
-  settings.voice.voice = $('#voiceName') && $('#voiceName').value || settings.voice.voice;
+  settings.base = $('#apiBase').value.trim() || DEFAULTS.base;
+  settings.key = $('#apiKey').value.trim();
+  settings.textModel = $('#textModel').value.trim() || DEFAULTS.textModel;
+  settings.imgModel = $('#imgModel').value.trim() || DEFAULTS.imgModel;
+  settings.voiceModel = $('#voiceModel').value.trim() || DEFAULTS.voiceModel;
+  settings.voice = $('#voiceName').value || settings.voice;
   saveJSON(LS_KEY, settings);
-  populateVoiceSelect();
   updateApiStatus();
   closeSettings();
-  toast('Настройки сохранены. Ключи лежат только в этом браузере.', 'ok');
+  toast('Сохранено. Токен лежит только в этом браузере.', 'ok');
 });
 $('#clearSettings').addEventListener('click', () => {
-  settings = structuredClone(DEFAULTS);
+  settings = Object.assign({}, DEFAULTS);
   localStorage.removeItem(LS_KEY);
   fillSettingsForm();
-  populateVoiceSelect();
   updateApiStatus();
-  toast('Ключи удалены из браузера.', 'ok');
+  toast('Токен удалён из браузера.', 'ok');
 });
 
 /* ════════════════════════════════════════════════
@@ -1070,7 +1050,9 @@ $('#clearSettings').addEventListener('click', () => {
    ════════════════════════════════════════════════ */
 
 $('#brief').addEventListener('submit', onGenerate);
-$('#wantVoice').addEventListener('change', updateApiStatus);
+
+$$('#voiceName').forEach(() => {});
+$('#voiceName').addEventListener('change', () => { settings.voice = $('#voiceName').value; saveJSON(LS_KEY, settings); });
 
 $$('.tile').forEach(t => t.addEventListener('click', () => {
   const v = t.dataset.style;
@@ -1091,9 +1073,9 @@ $('#year').textContent = new Date().getFullYear();
 populateVoiceSelect();
 updateApiStatus();
 resetSteps();
-if (!settings.text.key && !settings.img.key && !settings.voice.key) {
+if (!settings.key) {
   setTimeout(() => {
-    openSettings('text');
-    toast('Добро пожаловать! Вставь API-ключи — OpenAI, OpenRouter, ElevenLabs или любой совместимый.', 'ok', 6500);
+    openSettings();
+    toast('Вставь Base URL и токен своего API — и можно генерировать.', 'ok', 6000);
   }, 900);
 }
